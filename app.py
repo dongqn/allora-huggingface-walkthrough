@@ -1,77 +1,77 @@
-import json
-from flask import Flask, Response
+from decimal import Decimal
+from flask import Flask, request, jsonify
 import requests
 import random
+import sys
+import json
+
 
 # create our Flask app
 app = Flask(__name__)
 
-# Load config.json to extract any necessary configuration (if needed)
-with open('/root/allora-huggingface-walkthrough/config.json') as config_file:
-    config_data = json.load(config_file)
-
-# Function to get block height of Dogecoin from Upshot API
-def get_block_height():
-    url = "https://api.upshot.xyz/v2/block-height/dogecoin"  # URL for Dogecoin's block height
+# Function to get token symbol from block height
+def get_token_symbol_from_block_height(block_height):
+    url = f'https://api.upshot.xyz/v2/allora/tokens-oracle/token/{block_height}'
     headers = {
         "accept": "application/json",
-        "Authorization": "UP-0d9ed54694abdac60fd23b74"  # Replace with your Upshot API key
+        "x-api-key": "UP-0d9ed54694abdac60fd23b74"  # Replace with your API key
     }
 
     response = requests.get(url, headers=headers)
-
     if response.status_code == 200:
         data = response.json()
-        block_height = data.get('blockHeight')  # Adjust according to the actual API structure
-        return block_height
+        return data.get('data', {}).get('token_id')
     else:
-        return None
+        raise ValueError("Unable to retrieve token from this block height")
 
-# Map token symbol for Dogecoin
-def get_simple_price(token):
-    token_map = {
-        'DOGE': 'dogecoin'
+# Function to get meme coin price from the API
+def fetch_meme_coin_price(token):
+    base_url = "https://api.coingecko.com/api/v3/simple/price?ids="
+    url = f"{base_url}{token}&vs_currencies=usd"
+    headers = {
+        "accept": "application/json",
+        "x-cg-demo-api-key": "CG-CxBciEq3DtmaPFdWU7HPWymR"  # Replace with your API key
     }
-    token = token.upper()
-    return token_map.get(token, None)
 
-# Endpoint for price inference based on Dogecoin's block height
-@app.route("/inference/dogecoin")
-def get_inference():
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return data[token]["usd"]
+    else:
+        raise Exception(f"Unable to retrieve price for token {token}")
+
+# Function to predict price based on block height
+def predict_price(block_height):
+    # Get token from block height
+    token = get_token_symbol_from_block_height(block_height)
+    print(f"Token: {token}")
+
+    # Get the meme coin price
+    price = fetch_meme_coin_price(token)
+
+    # Generate a random price within  10% of the actual price
+    price1 = price + price * 0.10
+    price2 = price - price * 0.10
+    random_price = round(random.uniform(price1, price2), 7)
+
+    return random_price
+
+# Create an endpoint to predict the price
+@app.route("/predict/<int:block_height>", methods=["GET"])
+def predict_endpoint(block_height):
     try:
-        value_percent = 5  # Percentage for price prediction range
-        print(f"Prediction percentage: {value_percent}%")
+        # Call the predict_price function with block height
+        predicted_price = predict_price(block_height)
 
-        # Get block height from Upshot API for Dogecoin
-        block_height = get_block_height()
-        if not block_height:
-            return "Failed to fetch Dogecoin block height", 400
+        # Use Decimal to format the price as a float with fixed precision
+        predicted_price_decimal = Decimal(predicted_price).quantize(Decimal('0.00000001'))
 
-        # Get the simple price ID for Dogecoin from CoinGecko
-        current_token = get_simple_price("DOGE")
-        if not current_token:
-            return "Unsupported token: DOGE", 400
-
-        # Call the CoinGecko API to get the current price for Dogecoin
-        price_url = f"https://api.coingecko.com/api/v3/simple/price?ids={current_token}&vs_currencies=usd"
-        price_response = requests.get(price_url)
-
-        if price_response.status_code == 200:
-            price_data = price_response.json()
-            current_price = price_data[current_token]["usd"]
-
-            # Apply percentage to calculate price range for prediction
-            price1 = current_price + current_price * (value_percent / 100)
-            price2 = current_price - current_price * (value_percent / 100)
-
-            # Generate a random price within the calculated range
-            predicted_price = round(random.uniform(price1, price2), 7)
-            return f"Predicted price for Dogecoin at block height {block_height}: {predicted_price}", 200
-        else:
-            return f"Failed to fetch price for Dogecoin: {price_response.status_code}", 400
-
+        return jsonify({
+            "block_height": block_height,
+            "predicted_price": float(predicted_price_decimal)  # return as a float, not string
+        })
     except Exception as e:
-        return str(e), 400
+        return jsonify({"error": str(e)}), 500
 
 # run our Flask app
 if __name__ == '__main__':
