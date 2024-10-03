@@ -1,77 +1,83 @@
-from decimal import Decimal
-from flask import Flask, request, jsonify
+from flask import Flask, Response, jsonify
 import requests
 import random
-import sys
-import json
-
 
 # create our Flask app
 app = Flask(__name__)
 
-# Function to get token symbol from block height
-def get_token_symbol_from_block_height(block_height):
-    url = f'https://api.upshot.xyz/v2/allora/tokens-oracle/token/{block_height}'
-    headers = {
-        "accept": "application/json",
-        "x-api-key": "UP-0d9ed54694abdac60fd23b74"  # Replace with your API key
+# Map token symbols to CoinGecko API ids
+def get_simple_price(token):
+    token_map = {
+        'ETH': 'ethereum',
+        'SOL': 'solana',
+        'BTC': 'bitcoin',
+        'BNB': 'binancecoin',
+        'ARB': 'arbitrum'
     }
+    token = token.upper()
+    return token_map.get(token, None)
 
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('data', {}).get('token_id')
+# Initialize a dictionary to store past inferences and regrets
+past_inferences = {}
+past_regrets = {}
+
+# Define a function to calculate regret
+def calculate_regret(new_inference, token):
+    if token in past_inferences:
+        previous_inference = past_inferences[token]
+        regret = new_inference - previous_inference
+        return regret
     else:
-        raise ValueError("Unable to retrieve token from this block height")
+        return None
 
-# Function to get meme coin price from the API
-def fetch_meme_coin_price(token):
-    base_url = "https://api.coingecko.com/api/v3/simple/price?ids="
-    url = f"{base_url}{token}&vs_currencies=usd"
-    headers = {
-        "accept": "application/json",
-        "x-cg-demo-api-key": "CG-CxBciEq3DtmaPFdWU7HPWymR"  # Replace with your API key
-    }
-
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        return data[token]["usd"]
-    else:
-        raise Exception(f"Unable to retrieve price for token {token}")
-
-# Function to predict price based on block height
-def predict_price(block_height):
-    # Get token from block height
-    token = get_token_symbol_from_block_height(block_height)
-    print(f"Token: {token}")
-
-    # Get the meme coin price
-    price = fetch_meme_coin_price(token)
-
-    # Generate a random price within  10% of the actual price
-    price1 = price + price * 0.10
-    price2 = price - price * 0.10
-    random_price = round(random.uniform(price1, price2), 7)
-
-    return random_price
-
-# Create an endpoint to predict the price
-@app.route("/predict/<int:block_height>", methods=["GET"])
-def predict_endpoint(block_height):
+# define our endpoint for price inference
+@app.route("/inference/<string:token>")
+def get_inference(token):
     try:
-        # Call the predict_price function with block height
-        predicted_price = predict_price(block_height)
+        value_percent = 5  # You can dynamically adjust this percentage based on your strategy
 
-        # Use Decimal to format the price as a float with fixed precision
-        predicted_price_decimal = Decimal(predicted_price).quantize(Decimal('0.00000001'))
+        # Prepare API URL and headers
+        current_token = get_simple_price(token)
+        if not current_token:
+            return jsonify({"error": f"Unsupported token: {token}"}), 400
 
-        return jsonify({
-            "block_height": block_height,
-            "predicted_price": float(predicted_price_decimal)  # return as a float, not string
-        })
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={current_token}&vs_currencies=usd"
+        headers = {
+            "accept": "application/json",
+            "x-cg-demo-api-key": "<Your Coingecko API key>"  # Replace with your API key if needed
+        }
+
+        # Call the CoinGecko API to get the current price
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            current_price = data[current_token]["usd"]
+
+            # Apply percentage to calculate price range for prediction
+            price1 = current_price + current_price * (value_percent / 100)
+            price2 = current_price - current_price * (value_percent / 100)
+
+            # Generate a random price within the calculated range
+            predicted_price = round(random.uniform(price1, price2), 7)
+
+            # Calculate regret
+            regret = calculate_regret(predicted_price, token)
+            if regret is not None:
+                regret_type = "Positive regret (better performance)" if regret > 0 else "Negative regret (worse performance)"
+            else:
+                regret_type = "No previous inference to calculate regret."
+
+            # Update past inferences and regrets
+            past_inferences[token] = predicted_price
+            past_regrets[token] = regret if regret is not None else 0
+
+            # Return the result as JSON
+            return str(predicted_price)
+        else:
+            return f"Failed to fetch price for {token}: {response.status_code}", 400
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return str(e), 400
 
 # run our Flask app
 if __name__ == '__main__':
