@@ -1,23 +1,40 @@
 {
-    "wallet": {
-        "addressKeyName": "test",
-        "addressRestoreMnemonic": "just clap slim ...",
-        "alloraHomeDir": "",
-        "gas": "1000000",
-        "gasAdjustment": 1.5,
-        "nodeRpc": "https://allora-testnet-rpc.itrocket.net",
-        "maxRetries": 1,
-        "delay": 5,
-        "submitTx": true
-    },
-    "worker": [
-       {
-              "topicId": 10,
-              "inferenceEntrypointName": "api-worker-reputer",
-              "loopSeconds": 15,
-              "parameters": {
-                  "InferenceEndpoint": "http://inference:8800/inference/{BlockHeight}"
-              }
-          }
-       ]
-}
+  "wallet": {
+    "chainId": "allora-testnet-1",
+    "keyringBackend": "test",
+    "keyringPassphrase": "",
+    "addressKeyName": "testkey",
+    "addressRestoreMnemonic": "",
+    "alloraHomeDir": "",
+    "gasPrices": "auto",
+    "gasPriceUpdateInterval": 5,
+    "maxFees": 50000000,
+    "gasAdjustment": 1.2,
+    "simulateGasFromStart": true,
+    "GasPerByte": 1,
+    "BaseGas": 200000,
+    "nodeRpcs": ["https://allora-rpc.testnet.allora.network"],
+    "nodegRpcs": ["allora-grpc.testnet.allora.network:443","testnet-allora.lavenderfive.com:443"],
+    "maxRetries": 5,
+    "retryDelay": 3,
+    "accountSequenceRetryDelay": 5,
+    "launchRoutineDelay": 5,
+    "submitTx": true,
+    "blockDurationEstimated": 6,
+    "windowCorrectionFactor": 0.8,
+    "timeoutRPCSecondsQuery": 60,
+    "timeoutRPCSecondsTx": 300,
+    "timeoutRPCSecondsRegistration": 300,
+    "timeoutHTTPConnection": 10
+  },
+  "worker": [
+    {
+      "topicId": 47,
+      "inferenceEntrypointName": "apiAdapter",
+      "parameters": {
+        "InferenceEndpoint": "http://source:8021/inference/{Token}",
+        "Token": "BTC"
+      }
+    }
+  ]
+} 
